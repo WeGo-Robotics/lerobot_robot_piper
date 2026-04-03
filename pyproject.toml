@@ -1,0 +1,23 @@
+[project]
+name = "lerobot_robot_piper"
+version = "0.1.0"
+description = "LeRobot plugin for Agilex Piper robotic arm (follower & leader)"
+readme = "README.md"
+license = "Apache-2.0"
+requires-python = ">=3.10"
+dependencies = [
+    "lerobot>=0.3.0",
+    "piper_sdk",
+    "wego_piper",
+    "opencv-python",
+    "Pillow",
+]
+
+[project.scripts]
+piper-ui = "lerobot_robot_piper.ui:main"
+piper-monitor = "lerobot_robot_piper.teleop_ui:main"
+piper-setup = "lerobot_robot_piper.arm_setup_ui:main"
+
+[build-system]
+requires = ["setuptools>=68.0"]
+build-backend = "setuptools.build_meta"
