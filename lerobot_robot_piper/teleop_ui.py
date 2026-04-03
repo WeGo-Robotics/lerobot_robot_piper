@@ -13,6 +13,7 @@ Architecture:
   └──────────────────────────────────┘
 """
 
+import json
 import logging
 import os
 import signal
@@ -21,6 +22,8 @@ import threading
 import time
 import tkinter as tk
 from tkinter import ttk
+
+from .ui import _load_geometry, _save_geometry
 
 from piper_sdk import C_PiperInterface_V2
 
@@ -185,9 +188,12 @@ class PiperMonitorUI:
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
         self.root.minsize(750, 550)
 
+        geo = _load_geometry("piper-monitor")
+        if geo:
+            self.root.geometry(geo)
+
         self._build_ui()
         self.root.update_idletasks()
-        self.root.geometry(self.root.geometry())
 
         self._update_ui()
 
@@ -559,6 +565,7 @@ class PiperMonitorUI:
 
     # ---------------------------------------------------------- Close
     def _on_close(self):
+        _save_geometry("piper-monitor", self.root.geometry())
         self.running = False
         if self.monitoring:
             self._on_mon_stop()

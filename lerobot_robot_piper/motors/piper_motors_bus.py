@@ -105,12 +105,12 @@ class PiperMotorsBus(MotorsBusBase):
 
     def parking(self):
         timeout = 100  # 10sec
-        self.set_action(INITIALIZE_POSITION, False)
+        self.set_action(INITIALIZE_POSITION, True)
         time.sleep(0.1)
         status = self.piper.GetArmStatus()
 
         while status.arm_status.motion_status and timeout:
-            self.set_action(INITIALIZE_POSITION, False)
+            self.set_action(INITIALIZE_POSITION, True)
             time.sleep(0.1)
             status = self.piper.GetArmStatus()
             timeout -= 1

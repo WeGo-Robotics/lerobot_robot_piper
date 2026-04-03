@@ -1,4 +1,6 @@
+import json
 import logging
+import os
 import subprocess
 import threading
 import time
@@ -7,12 +9,39 @@ from tkinter import ttk
 
 import cv2
 from PIL import Image, ImageTk
+from piper_sdk import C_PiperInterface_V2
 
 from lerobot.motors import Motor, MotorCalibration, MotorNormMode
 
 from .motors import PiperMotorsBus
+from .motors.tables import INITIALIZE_POSITION
 
 logger = logging.getLogger(__name__)
+
+_GEOMETRY_FILE = os.path.expanduser("~/.piper_ui_geometry.json")
+
+
+def _load_geometry(key: str) -> str | None:
+    try:
+        with open(_GEOMETRY_FILE) as f:
+            return json.load(f).get(key)
+    except Exception:
+        return None
+
+
+def _save_geometry(key: str, geometry: str) -> None:
+    data: dict = {}
+    try:
+        with open(_GEOMETRY_FILE) as f:
+            data = json.load(f)
+    except Exception:
+        pass
+    data[key] = geometry
+    try:
+        with open(_GEOMETRY_FILE, "w") as f:
+            json.dump(data, f)
+    except Exception:
+        pass
 
 JOINTS = ["joint1", "joint2", "joint3", "joint4", "joint5", "joint6", "gripper"]
 
@@ -139,6 +168,31 @@ def init_can_interface(iface: str, target_name: str, bitrate: int) -> tuple[bool
     return True, "; ".join(messages)
 
 
+def _read_firmware(iface: str) -> str:
+    """Briefly connect to the arm on iface, read firmware version, then disconnect."""
+    try:
+        piper = C_PiperInterface_V2(iface, judge_flag=False, can_auto_init=False)
+        piper.ConnectPort(piper_init=False, start_thread=True)
+        try:
+            piper.SearchPiperFirmwareVersion()
+        except Exception:
+            pass
+        fw = "—"
+        for _ in range(5):
+            time.sleep(0.2)
+            result = piper.GetPiperFirmwareVersion()
+            if isinstance(result, str):
+                fw = result
+                break
+        try:
+            piper.DisconnectPort()
+        except Exception:
+            pass
+        return fw
+    except Exception:
+        return "Error"
+
+
 class PiperControlUI:
     def __init__(self, port: str = "can0", camera_indices: list[int] | None = None):
         self.port = port
@@ -147,6 +201,8 @@ class PiperControlUI:
         self.connected = False
         self.torque_on = False
         self.running = True
+        self._connected_port: str | None = None
+        self.arm_role: str = "follower"  # "follower" or "leader"
 
         # Camera
         self.cameras: dict[int, cv2.VideoCapture] = {}
@@ -155,6 +211,13 @@ class PiperControlUI:
         self.root = tk.Tk()
         self.root.title("Piper Arm Controller")
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
+
+        # Port selection variable (driven by radio buttons; must be after Tk())
+        self.port_var = tk.StringVar(value=self.port)
+
+        geo = _load_geometry("piper-ui")
+        if geo:
+            self.root.geometry(geo)
 
         self._build_ui()
 
@@ -166,10 +229,10 @@ class PiperControlUI:
     def _build_ui(self):
         self.root.columnconfigure(0, weight=1)
 
-        # -- CAN Setup
+        # -- CAN Setup (row 0)
         self._build_can_frame()
 
-        # -- Top: Control buttons
+        # -- Control buttons (row 1)
         btn_frame = ttk.LabelFrame(self.root, text="Control", padding=8)
         btn_frame.grid(row=1, column=0, sticky="ew", padx=8, pady=(8, 4))
 
@@ -185,18 +248,20 @@ class PiperControlUI:
         self.btn_parking = ttk.Button(btn_frame, text="Parking", command=self._on_parking, state="disabled")
         self.btn_parking.pack(side="left", padx=4)
 
-        # Port entry
-        ttk.Label(btn_frame, text="Port:").pack(side="left", padx=(16, 2))
-        self.port_var = tk.StringVar(value=self.port)
-        port_entry = ttk.Entry(btn_frame, textvariable=self.port_var, width=12)
-        port_entry.pack(side="left", padx=2)
+        ttk.Separator(btn_frame, orient="vertical").pack(side="left", fill="y", padx=8)
 
-        # -- Status bar
+        self.btn_set_leader = ttk.Button(btn_frame, text="Set Leader", command=self._on_set_leader, state="disabled")
+        self.btn_set_leader.pack(side="left", padx=4)
+
+        self.btn_set_follower = ttk.Button(btn_frame, text="Set Follower", command=self._on_set_follower, state="disabled")
+        self.btn_set_follower.pack(side="left", padx=4)
+
+        # -- Status bar (row 99)
         self.status_var = tk.StringVar(value="Disconnected")
         status_bar = ttk.Label(self.root, textvariable=self.status_var, relief="sunken", anchor="w", padding=4)
         status_bar.grid(row=99, column=0, sticky="ew", padx=8, pady=(4, 8))
 
-        # -- Middle: Sliders + Position
+        # -- Joints (row 2)
         joint_frame = ttk.LabelFrame(self.root, text="Joints", padding=8)
         joint_frame.grid(row=2, column=0, sticky="ew", padx=8, pady=4)
 
@@ -212,6 +277,7 @@ class PiperControlUI:
                 joint_frame, from_=lo, to=hi, orient="horizontal",
                 length=360, resolution=0.5, showvalue=True,
                 command=lambda val, n=name: self._on_slider_change(n, val),
+                state="disabled",
             )
             slider.set(0)
             slider.grid(row=i, column=1, sticky="ew", padx=4)
@@ -223,7 +289,7 @@ class PiperControlUI:
 
         joint_frame.columnconfigure(1, weight=1)
 
-        # -- Camera feeds
+        # -- Camera feeds (row 3)
         if self.camera_indices:
             cam_frame = ttk.LabelFrame(self.root, text="Cameras", padding=8)
             cam_frame.grid(row=3, column=0, sticky="nsew", padx=8, pady=4)
@@ -240,11 +306,10 @@ class PiperControlUI:
     def _build_can_frame(self):
         can_frame = ttk.LabelFrame(self.root, text="CAN Setup", padding=8)
         can_frame.grid(row=0, column=0, sticky="ew", padx=8, pady=(8, 4))
-        can_frame.columnconfigure(1, weight=1)
 
-        # Detect button
+        # Detect / Init All buttons + status
         btn_row = ttk.Frame(can_frame)
-        btn_row.grid(row=0, column=0, columnspan=4, sticky="ew", pady=(0, 4))
+        btn_row.grid(row=0, column=0, columnspan=10, sticky="ew", pady=(0, 4))
 
         ttk.Button(btn_row, text="Detect", command=self._on_can_detect).pack(side="left", padx=4)
         ttk.Button(btn_row, text="Init All", command=self._on_can_init_all).pack(side="left", padx=4)
@@ -252,20 +317,19 @@ class PiperControlUI:
         self.can_status_var = tk.StringVar(value="Click 'Detect' to scan CAN interfaces")
         ttk.Label(btn_row, textvariable=self.can_status_var).pack(side="left", padx=12)
 
-        # Header
-        headers = ["Interface", "USB Port", "State", "Bitrate", "Target Name", "Target Bitrate", ""]
+        # Columns: Sel | Interface | USB Port | State | Bitrate | Firmware | Role | Target Name | Target Bitrate | ""
+        headers = ["Sel", "Interface", "USB Port", "State", "Bitrate", "Firmware", "Role", "Target Name", "Target Bitrate", ""]
         for col, h in enumerate(headers):
             ttk.Label(can_frame, text=h, font=("", 9, "bold")).grid(row=1, column=col, padx=4, sticky="w")
 
-        ttk.Separator(can_frame, orient="horizontal").grid(row=2, column=0, columnspan=7, sticky="ew", pady=2)
+        ttk.Separator(can_frame, orient="horizontal").grid(row=2, column=0, columnspan=10, sticky="ew", pady=2)
 
-        # Rows (will be populated by detect)
+        # Port rows (populated by detect)
         self.can_rows_frame = ttk.Frame(can_frame)
-        self.can_rows_frame.grid(row=3, column=0, columnspan=7, sticky="ew")
+        self.can_rows_frame.grid(row=3, column=0, columnspan=10, sticky="ew")
         self.can_row_widgets: list[dict] = []
 
     def _on_can_detect(self):
-        # Clear old rows
         for w in self.can_rows_frame.winfo_children():
             w.destroy()
         self.can_row_widgets.clear()
@@ -277,39 +341,80 @@ class PiperControlUI:
 
         self.can_status_var.set(f"{len(interfaces)} interface(s) found")
 
-        for i, info in enumerate(interfaces):
-            row_data = {}
-            row_data["info"] = info
+        # Keep current selection if still valid, else auto-select first
+        current = self.port_var.get()
+        if current not in [i["iface"] for i in interfaces]:
+            self.port_var.set(interfaces[0]["iface"])
 
-            ttk.Label(self.can_rows_frame, text=info["iface"]).grid(row=i, column=0, padx=4, sticky="w")
-            ttk.Label(self.can_rows_frame, text=info["bus_info"]).grid(row=i, column=1, padx=4, sticky="w")
+        for i, info in enumerate(interfaces):
+            row_data: dict = {"info": info}
+
+            # Sel: radio button
+            rb = ttk.Radiobutton(self.can_rows_frame, variable=self.port_var, value=info["iface"])
+            rb.grid(row=i, column=0, padx=4)
+            row_data["radio"] = rb
+
+            ttk.Label(self.can_rows_frame, text=info["iface"]).grid(row=i, column=1, padx=4, sticky="w")
+            ttk.Label(self.can_rows_frame, text=info["bus_info"]).grid(row=i, column=2, padx=4, sticky="w")
 
             state_color = "green" if info["state"] == "UP" else "gray"
-            state_lbl = tk.Label(self.can_rows_frame, text=info["state"], fg=state_color)
-            state_lbl.grid(row=i, column=2, padx=4, sticky="w")
+            tk.Label(self.can_rows_frame, text=info["state"], fg=state_color).grid(row=i, column=3, padx=4, sticky="w")
 
-            ttk.Label(self.can_rows_frame, text=info["bitrate"] or "--").grid(row=i, column=3, padx=4, sticky="w")
+            ttk.Label(self.can_rows_frame, text=info["bitrate"] or "--").grid(row=i, column=4, padx=4, sticky="w")
 
-            # Target name (editable)
+            # Firmware (populated async for UP interfaces)
+            fw_var = tk.StringVar(value="..." if info["state"] == "UP" else "—")
+            ttk.Label(self.can_rows_frame, textvariable=fw_var, width=14).grid(row=i, column=5, padx=4, sticky="w")
+            row_data["fw_var"] = fw_var
+
+            # Role combobox
+            default_role = "leader" if i == 0 and len(interfaces) > 1 else "follower"
+            role_var = tk.StringVar(value=default_role)
+            role_cb = ttk.Combobox(
+                self.can_rows_frame, textvariable=role_var,
+                values=["follower", "leader"], state="readonly", width=9,
+            )
+            role_cb.grid(row=i, column=6, padx=4)
+            row_data["role_var"] = role_var
+
+            # Target name
             default_name = f"can_{'leader' if i == 0 else 'follower'}" if len(interfaces) > 1 else "can_follower"
             name_var = tk.StringVar(value=default_name)
-            ttk.Entry(self.can_rows_frame, textvariable=name_var, width=14).grid(row=i, column=4, padx=4)
+            ttk.Entry(self.can_rows_frame, textvariable=name_var, width=14).grid(row=i, column=7, padx=4)
             row_data["target_name"] = name_var
 
             # Target bitrate
             br_var = tk.StringVar(value="1000000")
-            ttk.Entry(self.can_rows_frame, textvariable=br_var, width=10).grid(row=i, column=5, padx=4)
+            ttk.Entry(self.can_rows_frame, textvariable=br_var, width=10).grid(row=i, column=8, padx=4)
             row_data["target_bitrate"] = br_var
 
-            # Individual init button
+            # Init button
             btn = ttk.Button(
                 self.can_rows_frame, text="Init",
                 command=lambda idx=i: self._on_can_init_single(idx),
             )
-            btn.grid(row=i, column=6, padx=4)
+            btn.grid(row=i, column=9, padx=4)
             row_data["btn"] = btn
 
             self.can_row_widgets.append(row_data)
+
+        # Read firmware asynchronously for each UP interface that is not currently in use
+        for i, info in enumerate(interfaces):
+            if info["state"] != "UP":
+                continue
+            if info["iface"] == self._connected_port:
+                self.can_row_widgets[i]["fw_var"].set("In Use")
+                continue
+            fw_var = self.can_row_widgets[i]["fw_var"]
+            threading.Thread(
+                target=self._read_firmware_for_row,
+                args=(info["iface"], fw_var),
+                daemon=True,
+            ).start()
+
+    def _read_firmware_for_row(self, iface: str, fw_var: tk.StringVar) -> None:
+        fw = _read_firmware(iface)
+        self.root.after(0, lambda: fw_var.set(fw))
 
     def _on_can_init_single(self, idx: int):
         row = self.can_row_widgets[idx]
@@ -354,11 +459,32 @@ class PiperControlUI:
         self.can_status_var.set(" | ".join(results))
         self._on_can_detect()  # refresh
 
+    # ------------------------------------------------ Port list enable/disable
+    def _set_port_radios_state(self, state: str) -> None:
+        for row in self.can_row_widgets:
+            if "radio" in row:
+                row["radio"].config(state=state)
+
+    # ------------------------------------------------ Role-aware joint read
+    def _read_joints(self) -> dict:
+        """Read joint positions using the correct CAN address for the connected role."""
+        if self.arm_role == "leader":
+            return self.bus.get_control()   # CAN 0x155-0x157 (teaching broadcast)
+        return self.bus.get_action()        # CAN 0x2A5-0x2A7 (encoder feedback)
+
+    # ------------------------------------------------ Movement controls state
+    def _update_movement_controls(self):
+        """Enable sliders and Parking only when connected and torque is on."""
+        state = "normal" if (self.connected and self.torque_on) else "disabled"
+        for slider in self.sliders.values():
+            slider.config(state=state)
+        self.btn_parking.config(state=state)
+
     # ------------------------------------------------------------ Actions
     def _on_connect(self):
         port = self.port_var.get().strip()
         if not port:
-            self.status_var.set("Error: port is empty")
+            self.status_var.set("Error: no port selected. Click 'Detect' first.")
             return
 
         self.status_var.set(f"Connecting to {port}...")
@@ -378,12 +504,48 @@ class PiperControlUI:
             return
 
         self.connected = True
-        self.status_var.set(f"Connected to {port}")
+        self._connected_port = port
+
+        # Pick up role from the port list row
+        self.arm_role = "follower"
+        for row in self.can_row_widgets:
+            if row["info"]["iface"] == port:
+                self.arm_role = row["role_var"].get()
+                break
+        self.status_var.set(f"Connected to {port} ({self.arm_role})")
 
         self.btn_connect.config(state="disabled")
         self.btn_disconnect.config(state="normal")
         self.btn_torque.config(state="normal")
-        self.btn_parking.config(state="normal")
+        self.btn_set_leader.config(state="normal")
+        self.btn_set_follower.config(state="normal")
+        self._set_port_radios_state("disabled")
+        self._update_movement_controls()
+
+        # Sync sliders after a short delay so the CAN thread receives the first feedback
+        def _sync_sliders():
+            time.sleep(1.0)
+            if not self.connected or self.bus is None:
+                return
+            try:
+                pos = self._read_joints()
+            except Exception as e:
+                logger.warning(f"Slider sync read failed: {e}")
+                return
+
+            def _apply():
+                for n, v in pos.items():
+                    if n in self.sliders:
+                        s = self.sliders[n]
+                        # Briefly enable so tkinter renders the new thumb position
+                        s.config(state="normal")
+                        s.set(v)
+                        if not self.torque_on:
+                            s.config(state="disabled")
+
+            self.root.after(0, _apply)
+
+        threading.Thread(target=_sync_sliders, daemon=True).start()
 
         # Open cameras
         for idx in self.camera_indices:
@@ -399,6 +561,7 @@ class PiperControlUI:
 
         self.connected = False
         self.torque_on = False
+        self._connected_port = None
 
         # Release cameras
         for cap in self.cameras.values():
@@ -409,8 +572,11 @@ class PiperControlUI:
         self.btn_connect.config(state="normal")
         self.btn_disconnect.config(state="disabled")
         self.btn_torque.config(state="disabled")
-        self.btn_parking.config(state="disabled")
         self.btn_torque.config(text="Torque ON")
+        self.btn_set_leader.config(state="disabled")
+        self.btn_set_follower.config(state="disabled")
+        self._set_port_radios_state("normal")
+        self._update_movement_controls()
 
     def _on_torque_toggle(self):
         if not self.bus:
@@ -429,20 +595,20 @@ class PiperControlUI:
             self.torque_on = False
             self.btn_torque.config(text="Torque ON")
             self.status_var.set("Torque disabled")
+        self._update_movement_controls()
 
     def _on_parking(self):
-        if not self.bus:
+        if not self.bus or not self.torque_on:
             return
         self.status_var.set("Parking...")
         self.root.update()
         self.bus.parking()
-        # Sync sliders to 0
-        for s in self.sliders.values():
-            s.set(0)
+        for name, val in INITIALIZE_POSITION.items():
+            if name in self.sliders:
+                self.sliders[name].set(val)
         self.status_var.set("Parked")
 
     def _on_slider_change(self, name: str, _val: str):
-        """Called immediately when any slider is dragged."""
         if not self.connected or not self.bus or not self.torque_on:
             return
         goal = {n: float(self.sliders[n].get()) for n in JOINTS}
@@ -450,6 +616,38 @@ class PiperControlUI:
             self.bus.set_action(goal, is_conv=True)
         except Exception:
             logger.exception(f"Failed to send slider value for {name}")
+
+    def _on_set_leader(self):
+        if not self.bus:
+            return
+        self.btn_set_leader.config(state="disabled")
+
+        def worker():
+            try:
+                self.bus.set_master()
+                self.root.after(0, lambda: self.status_var.set("Set as Leader (teaching input mode)"))
+            except Exception as e:
+                self.root.after(0, lambda: self.status_var.set(f"Set Leader failed: {e}"))
+            finally:
+                self.root.after(0, lambda: self.btn_set_leader.config(state="normal"))
+
+        threading.Thread(target=worker, daemon=True).start()
+
+    def _on_set_follower(self):
+        if not self.bus:
+            return
+        self.btn_set_follower.config(state="disabled")
+
+        def worker():
+            try:
+                self.bus.set_slave()
+                self.root.after(0, lambda: self.status_var.set("Set as Follower (motion output mode)"))
+            except Exception as e:
+                self.root.after(0, lambda: self.status_var.set(f"Set Follower failed: {e}"))
+            finally:
+                self.root.after(0, lambda: self.btn_set_follower.config(state="normal"))
+
+        threading.Thread(target=worker, daemon=True).start()
 
     # --------------------------------------------------------- Poll loop
     def _poll_loop(self):
@@ -459,13 +657,11 @@ class PiperControlUI:
                 continue
 
             try:
-                # Read current positions
-                pos = self.bus.get_action()
+                pos = self._read_joints()
                 for name, val in pos.items():
                     if name in self.pos_labels:
                         self.pos_labels[name].set(f"{val:.1f}")
 
-                # Update camera feeds
                 for idx, cap in list(self.cameras.items()):
                     ret, frame = cap.read()
                     if ret and idx in getattr(self, "cam_labels", {}):
@@ -474,15 +670,16 @@ class PiperControlUI:
                         img = Image.fromarray(frame_rgb)
                         imgtk = ImageTk.PhotoImage(image=img)
                         self.cam_labels[idx].config(image=imgtk, text="")
-                        self.cam_labels[idx].imgtk = imgtk  # keep reference
+                        self.cam_labels[idx].imgtk = imgtk
 
             except Exception:
                 logger.exception("Poll error")
 
-            time.sleep(0.05)  # ~20Hz
+            time.sleep(0.05)  # ~20 Hz
 
     # -------------------------------------------------------------- Run
     def _on_close(self):
+        _save_geometry("piper-ui", self.root.geometry())
         self.running = False
         if self.connected:
             self._on_disconnect()

@@ -26,11 +26,11 @@ MODEL_CONTROL_TABLE = {
 }
 
 INITIALIZE_POSITION = {
-    "joint1": 0,
-    "joint2": 0,
-    "joint3": 0,
-    "joint4": 0,
-    "joint5": 0,
-    "joint6": 0,
-    "gripper": 0,
+    "joint1":    0,
+    "joint2": -100,
+    "joint3":  100,
+    "joint4":    0,
+    "joint5":   35,
+    "joint6":    0,
+    "gripper":   0,
 }

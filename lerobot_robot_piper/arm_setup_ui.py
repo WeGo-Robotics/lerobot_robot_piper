@@ -25,6 +25,8 @@ from tkinter import messagebox, scrolledtext, ttk
 
 from piper_sdk import C_PiperInterface_V2
 
+from .ui import _load_geometry, _save_geometry
+
 
 # ─────────────────────────────── constants ────────────────────────────────
 
@@ -260,6 +262,10 @@ class ArmSetupUI:
         self._slot_rows: list[dict] = []
         self._find_active = False
         self._find_cancelled = False
+
+        geo = _load_geometry("piper-setup")
+        if geo:
+            self.root.geometry(geo)
 
         self._build_ui()
         self.root.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -771,6 +777,7 @@ class ArmSetupUI:
         self._log_box.config(state="disabled")
 
     def _on_close(self) -> None:
+        _save_geometry("piper-setup", self.root.geometry())
         self._find_active = False
         for arm in self._arms:
             arm.disconnect()

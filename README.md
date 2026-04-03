@@ -49,7 +49,7 @@ sudo ip link set can0 type can bitrate 1000000
 sudo ip link set can0 up
 ```
 
-The `piper-monitor` GUI can detect available CAN interfaces and initialize them automatically.
+The `piper-ui` and `piper-monitor` GUIs can detect available CAN interfaces and initialize them automatically.
 
 ### Wiring
 
@@ -60,9 +60,56 @@ The `piper-monitor` GUI can detect available CAN interfaces and initialize them 
 
 ---
 
+## GUI Tools
+
+![piper-ui](asset/piper-ui.png)
+![piper-teleop](asset/piper-teleop.png)
+![piper-setup](asset/piper-setup.png)
+
+### `piper-setup` — Multi-Arm Setup Wizard
+
+Run this first when setting up multiple arms.
+
+```bash
+piper-setup
+```
+
+4-step wizard for configuring up to 4 arms:
+
+1. **Scan** — detect all CAN ports, initialize, connect, and read firmware version from each arm
+2. **Config** — select arm configuration (1 Leader/1 Follower, 2 Followers, 2 Leaders, 2 Leaders/2 Followers)
+3. **Identify** — click `Find` for each slot, then physically move the target arm more than 45° to assign it; use `Set Role` to apply leader/follower mode and `Torque Off` to release the arm
+4. **Finalize** — rename CAN ports to canonical names (`can_leader1`, `can_follower1`, etc.) and save `~/piper_config.json`
+
+### `piper-ui` — Direct Control
+
+```bash
+piper-ui
+```
+
+- **CAN Setup**: detect interfaces, view firmware version and USB port per interface, select role (leader/follower), initialize bitrate
+- **Connect**: select a port via radio button, then click Connect — sliders automatically sync to the arm's current joint positions
+- **Torque**: toggle torque on/off; sliders and Parking are disabled while torque is off
+- **Set Leader / Set Follower**: apply `MasterSlaveConfig` to switch the arm between teaching input mode and motion output mode
+- **Parking**: move the arm to the home position (joint values: 0, −100, 100, 0, 35, 0, 0)
+- **Joints**: drag sliders to move joints in real time (only active when torque is on); live position readout next to each slider
+
+### `piper-monitor` — Teleoperation Monitor
+
+```bash
+piper-monitor
+```
+
+- Detect and initialize CAN interfaces
+- Launch pre-configured teleoperation/recording commands
+- Real-time joint position bars for both arms (leader & follower)
+- Follower arm status (enable state, motion status, error codes)
+
+---
+
 ## Quick Start
 
-### 1. Teleoperation
+### 1. Python API
 
 ```python
 from lerobot_robot_piper import PiperFollowerConfig, PiperLeaderConfig, PiperFollower, PiperLeader
@@ -141,59 +188,9 @@ The Piper arm has 7 joints. Normalization maps raw encoder counts to the ranges 
 | Joint 6 | AGILEX-S | −100 to +100 | ±100–130° |
 | Gripper | AGILEX-S | 0 to 100 | 0–68° |
 
----
-
-## GUI Tools
-
-### `piper-ui` — Direct Control
-
-```bash
-piper-ui
-```
-
-- Connect/disconnect to the arm
-- Toggle torque and move to parking position
-- Sliders for real-time joint control
-- Live camera feed display
-
-### `piper-monitor` — Teleoperation Monitor
-
-```bash
-piper-monitor
-```
-
-- Detect and initialize CAN interfaces
-- Launch pre-configured teleoperation/recording commands
-- Real-time joint position bars for both arms (leader & follower)
-- Follower arm status (enable state, motion status, error codes)
-
-### `piper-setup` — Multi-Arm Setup Wizard
-
-```bash
-piper-setup
-```
-
-4-step wizard for configuring up to 4 arms:
-
-1. **Scan** — detect all CAN ports, initialize, connect, and auto-identify each arm (leader/follower)
-2. **Config** — select arm configuration (Leader 1/Follower 1, Follower 2, Leader 2, Leader 2/Follower 2)
-3. **Identify** — click `찾기` for each slot, then physically move the target arm more than 45° to assign it
-4. **Finalize** — rename CAN ports to canonical names (`can_leader1`, `can_follower1`, etc.) and save `~/piper_config.json`
+The parking (home) position in normalized values: `0, −100, 100, 0, 35, 0, 0`.
 
 ---
-
-## Troubleshooting
-
-### Korean text appears garbled in the GUI
-
-The GUI requires the **NanumGothic** font (`fonts-nanum` package), which is Ubuntu's standard Korean UI font.
-
-```bash
-sudo apt install fonts-nanum
-fc-cache -fv
-```
-
-After installing, restart the GUI.
 
 ## Project Structure
 
