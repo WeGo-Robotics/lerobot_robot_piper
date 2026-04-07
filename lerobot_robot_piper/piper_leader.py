@@ -89,7 +89,8 @@ class PiperLeader(Teleoperator):
     def get_action(self) -> dict[str, Any]:
         if not self.is_connected:
             raise DeviceNotConnectedError(f"{self} is not connected.")
-        return self.bus.get_control()
+        raw = self.bus.get_control()
+        return {f"{k}.pos": v for k, v in raw.items()}
 
     def is_protected(self) -> bool:
         return False

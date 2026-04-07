@@ -1,5 +1,6 @@
 import logging
 import time
+from concurrent.futures import ThreadPoolExecutor
 from functools import cached_property
 from pathlib import Path
 from typing import Any
@@ -51,6 +52,12 @@ class PiperFollower(Robot):
             },
         )
         self.cameras = make_cameras_from_configs(config.cameras)
+        self._camera_executor: ThreadPoolExecutor | None = None
+        if self.cameras:
+            self._camera_executor = ThreadPoolExecutor(
+                max_workers=len(self.cameras),
+                thread_name_prefix="cam_read",
+            )
 
     def __str__(self) -> str:
         return f"{self.id} {self.__class__.__name__}"
@@ -125,12 +132,16 @@ class PiperFollower(Robot):
         dt_ms = (time.perf_counter() - start) * 1e3
         logger.debug(f"{self} read state: {dt_ms:.1f}ms")
 
-        # Capture images from cameras
-        for cam_key, cam in self.cameras.items():
-            start = time.perf_counter()
-            obs_dict[cam_key] = cam.async_read()
-            dt_ms = (time.perf_counter() - start) * 1e3
-            logger.debug(f"{self} read {cam_key}: {dt_ms:.1f}ms")
+        # Capture images from cameras (parallel)
+        if self.cameras:
+            futures = {
+                cam_key: (self._camera_executor.submit(cam.async_read), time.perf_counter())
+                for cam_key, cam in self.cameras.items()
+            }
+            for cam_key, (future, start) in futures.items():
+                obs_dict[cam_key] = future.result()
+                dt_ms = (time.perf_counter() - start) * 1e3
+                logger.debug(f"{self} read {cam_key}: {dt_ms:.1f}ms")
 
         return obs_dict
 
@@ -158,4 +169,7 @@ class PiperFollower(Robot):
         self.bus.parking()
 
     def disconnect(self, disable_torque: bool = False) -> None:
+        if self._camera_executor is not None:
+            self._camera_executor.shutdown(wait=False)
+            self._camera_executor = None
         self.bus.disconnect(disable_torque)

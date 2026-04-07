@@ -261,9 +261,12 @@ class PiperControlUI:
         status_bar = ttk.Label(self.root, textvariable=self.status_var, relief="sunken", anchor="w", padding=4)
         status_bar.grid(row=99, column=0, sticky="ew", padx=8, pady=(4, 8))
 
-        # -- Joints (row 2)
+        # -- Joint Monitor (row 2)
+        self._build_joint_monitor()
+
+        # -- Joints (row 3)
         joint_frame = ttk.LabelFrame(self.root, text="Joints", padding=8)
-        joint_frame.grid(row=2, column=0, sticky="ew", padx=8, pady=4)
+        joint_frame.grid(row=3, column=0, sticky="ew", padx=8, pady=4)
 
         self.sliders: dict[str, tk.Scale] = {}
         self.pos_labels: dict[str, tk.StringVar] = {}
@@ -289,11 +292,11 @@ class PiperControlUI:
 
         joint_frame.columnconfigure(1, weight=1)
 
-        # -- Camera feeds (row 3)
+        # -- Camera feeds (row 4)
         if self.camera_indices:
             cam_frame = ttk.LabelFrame(self.root, text="Cameras", padding=8)
-            cam_frame.grid(row=3, column=0, sticky="nsew", padx=8, pady=4)
-            self.root.rowconfigure(3, weight=1)
+            cam_frame.grid(row=4, column=0, sticky="nsew", padx=8, pady=4)
+            self.root.rowconfigure(4, weight=1)
 
             self.cam_labels: dict[int, ttk.Label] = {}
             for col, idx in enumerate(self.camera_indices):
@@ -301,6 +304,22 @@ class PiperControlUI:
                 lbl.grid(row=0, column=col, padx=4, pady=4)
                 self.cam_labels[idx] = lbl
                 cam_frame.columnconfigure(col, weight=1)
+
+    # ------------------------------------------------------ Joint Monitor
+    def _build_joint_monitor(self):
+        mon_frame = ttk.LabelFrame(self.root, text="Joint Monitor", padding=8)
+        mon_frame.grid(row=2, column=0, sticky="ew", padx=8, pady=4)
+
+        self.mon_labels: dict[str, tk.Label] = {}
+        for col, name in enumerate(JOINTS):
+            ttk.Label(mon_frame, text=name, anchor="center").grid(row=0, column=col, padx=6)
+            lbl = tk.Label(
+                mon_frame, text="--", font=("monospace", 14, "bold"),
+                width=7, anchor="center", relief="sunken", bg="#f0f0f0",
+            )
+            lbl.grid(row=1, column=col, padx=6, pady=(2, 0))
+            self.mon_labels[name] = lbl
+            mon_frame.columnconfigure(col, weight=1)
 
     # --------------------------------------------------------- CAN Setup
     def _build_can_frame(self):
@@ -568,6 +587,9 @@ class PiperControlUI:
             cap.release()
         self.cameras.clear()
 
+        for lbl in self.mon_labels.values():
+            lbl.config(text="--")
+
         self.status_var.set("Disconnected")
         self.btn_connect.config(state="normal")
         self.btn_disconnect.config(state="disabled")
@@ -661,6 +683,8 @@ class PiperControlUI:
                 for name, val in pos.items():
                     if name in self.pos_labels:
                         self.pos_labels[name].set(f"{val:.1f}")
+                    if name in self.mon_labels:
+                        self.mon_labels[name].config(text=f"{val:.1f}")
 
                 for idx, cap in list(self.cameras.items()):
                     ret, frame = cap.read()

@@ -18,6 +18,9 @@ piper-ui = "lerobot_robot_piper.ui:main"
 piper-monitor = "lerobot_robot_piper.teleop_ui:main"
 piper-setup = "lerobot_robot_piper.arm_setup_ui:main"
 
+[tool.setuptools.packages.find]
+include = ["lerobot_robot_piper*"]
+
 [build-system]
 requires = ["setuptools>=68.0"]
 build-backend = "setuptools.build_meta"
