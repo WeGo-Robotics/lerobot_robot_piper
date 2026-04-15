@@ -145,6 +145,7 @@ class DiscoveredArm:
 
         try:
             piper = C_PiperInterface_V2(self.iface, judge_flag=False, can_auto_init=False)
+            piper.CreateCanBus(self.iface)
             piper.ConnectPort(piper_init=False, start_thread=True)
 
             # Send firmware query command (not sent when piper_init=False)
@@ -153,19 +154,31 @@ class DiscoveredArm:
             except Exception:
                 pass
 
-            # Wait for async firmware CAN response (up to 1 s)
-            for _ in range(5):
+            # Wait for async firmware CAN response (up to 3 s)
+            for _ in range(15):
                 time.sleep(0.2)
                 fw = piper.GetPiperFirmwareVersion()
                 if isinstance(fw, str):
                     self.fw = fw
                     break
             else:
-                # No firmware response — verify by reading status messages
-                try:
-                    piper.GetArmStatus()
-                    piper.GetArmJointMsgs()
-                except Exception:
+                # No firmware response — verify by reading joint positions
+                # (non-zero joint position = arm is alive)
+                verified = False
+                for _ in range(10):
+                    time.sleep(0.2)
+                    try:
+                        msgs = piper.GetArmJointMsgs()
+                        joints = msgs.joint_state
+                        positions = [joints.joint_1.real, joints.joint_2.real,
+                                     joints.joint_3.real, joints.joint_4.real,
+                                     joints.joint_5.real, joints.joint_6.real]
+                        if any(p != 0.0 for p in positions):
+                            verified = True
+                            break
+                    except Exception:
+                        pass
+                if not verified:
                     piper.DisconnectPort()
                     return False
 
@@ -364,6 +377,9 @@ class ArmSetupUI:
         ttk.Separator(t, orient="horizontal").grid(
             row=1, column=0, columnspan=7, sticky="ew", pady=2)
 
+        # Build port choices for combo: "(none)" + detected piper arm ifaces
+        port_choices = ["(none)"] + [a.iface for a in self._arms]
+
         for i, slot in enumerate(slots):
             r = i + 2
             status_var  = tk.StringVar(value="Waiting")
@@ -373,8 +389,14 @@ class ArmSetupUI:
                 row=r, column=0, sticky="w", padx=6, pady=4)
             ttk.Label(t, text=slot_to_can_name(slot), width=15,
                       foreground="#005599").grid(row=r, column=1, sticky="w", padx=6)
-            ttk.Label(t, textvariable=assigned_var, width=14).grid(
-                row=r, column=2, sticky="w", padx=6)
+
+            # Combobox for manual port selection
+            combo = ttk.Combobox(t, textvariable=assigned_var, values=port_choices,
+                                 state="readonly", width=14)
+            combo.grid(row=r, column=2, sticky="w", padx=6)
+            combo.bind("<<ComboboxSelected>>",
+                       lambda _e, s=slot: self._on_manual_assign(s))
+
             ttk.Label(t, textvariable=status_var, width=18).grid(
                 row=r, column=3, sticky="w", padx=6)
             btn = ttk.Button(t, text="Find", width=8,
@@ -397,10 +419,77 @@ class ArmSetupUI:
                 "label":           slot_to_label(slot),
                 "status_var":      status_var,
                 "assigned_var":    assigned_var,
+                "combo":           combo,
                 "btn":             btn,
                 "btn_role":        btn_role,
                 "btn_torque_off":  btn_torque_off,
             })
+
+    def _on_manual_assign(self, slot: str) -> None:
+        """Handle manual port selection from the combobox."""
+        row_data = next((r for r in self._slot_rows if r["slot"] == slot), None)
+        if row_data is None:
+            return
+
+        selected = row_data["assigned_var"].get()
+
+        # If "(none)" selected, unassign
+        if selected == "(none)":
+            # Find previously assigned arm and clear it
+            prev_arm = next((a for a in self._arms if a.slot == slot), None)
+            if prev_arm:
+                prev_arm.slot = None
+                prev_arm.new_name = None
+            row_data["status_var"].set("Waiting")
+            row_data["btn"].config(state="normal", text="Find")
+            row_data["btn_role"].config(state="disabled")
+            row_data["btn_torque_off"].config(state="disabled")
+            self._finalize_btn.config(state="disabled")
+            self._log(f"{row_data['label']}: unassigned")
+            return
+
+        # Check if this port is already assigned to another slot
+        for other_row in self._slot_rows:
+            if other_row["slot"] == slot:
+                continue
+            if other_row["assigned_var"].get() == selected:
+                messagebox.showwarning(
+                    "Port already assigned",
+                    f"'{selected}' is already assigned to {other_row['label']}.\n"
+                    f"Unassign it first."
+                )
+                row_data["assigned_var"].set("(none)")
+                return
+
+        # Clear previous assignment for this slot
+        prev_arm = next((a for a in self._arms if a.slot == slot), None)
+        if prev_arm:
+            prev_arm.slot = None
+            prev_arm.new_name = None
+
+        # Assign the selected arm
+        arm = next((a for a in self._arms if a.iface == selected), None)
+        if arm is None:
+            return
+
+        arm.slot = slot
+        arm.new_name = row_data["new_name"]
+        arm.role = slot.rsplit("_", 1)[0]
+
+        row_data["status_var"].set("Assigned (manual)")
+        row_data["btn"].config(state="disabled", text="Done")
+        row_data["btn_role"].config(state="normal")
+        row_data["btn_torque_off"].config(state="normal")
+        self._log(f"{row_data['label']}: manually assigned -> {selected}")
+
+        # Check if all slots are done
+        all_done = all(
+            any(a.slot == r["slot"] for a in self._arms)
+            for r in self._slot_rows
+        )
+        if all_done:
+            self._finalize_btn.config(state="normal")
+            self._log("All slots assigned! Proceed to Step 4.")
 
     # ── Step 4 ─────────────────────────────────────────────────────────────
 
@@ -599,6 +688,7 @@ class ArmSetupUI:
             self._log(f"  + {label} assigned: {iface}  ->  {new_name}")
             self._ui(lambda: row_data["status_var"].set("Assigned"))
             self._ui(lambda: row_data["assigned_var"].set(iface))
+            self._ui(lambda: row_data["combo"].config(state="disabled"))
             self._ui(lambda: row_data["btn"].config(state="disabled", text="Done"))
             self._ui(lambda: row_data["btn_role"].config(state="normal"))
             self._ui(lambda: row_data["btn_torque_off"].config(state="normal"))

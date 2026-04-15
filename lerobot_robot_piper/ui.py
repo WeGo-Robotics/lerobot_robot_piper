@@ -172,6 +172,7 @@ def _read_firmware(iface: str) -> str:
     """Briefly connect to the arm on iface, read firmware version, then disconnect."""
     try:
         piper = C_PiperInterface_V2(iface, judge_flag=False, can_auto_init=False)
+        piper.CreateCanBus(iface)
         piper.ConnectPort(piper_init=False, start_thread=True)
         try:
             piper.SearchPiperFirmwareVersion()

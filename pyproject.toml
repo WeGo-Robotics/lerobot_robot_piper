@@ -15,8 +15,9 @@ dependencies = [
 
 [project.scripts]
 piper-ui = "lerobot_robot_piper.ui:main"
-piper-monitor = "lerobot_robot_piper.teleop_ui:main"
+piper-teleop = "lerobot_robot_piper.teleop_ui:main"
 piper-setup = "lerobot_robot_piper.arm_setup_ui:main"
+piper-calibrate = "lerobot_robot_piper.calibration_ui:main"
 
 [tool.setuptools.packages.find]
 include = ["lerobot_robot_piper*"]
