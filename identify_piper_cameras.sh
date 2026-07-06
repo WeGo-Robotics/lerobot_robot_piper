@@ -11,6 +11,12 @@ ROBOT_PORT="${ROBOT_PORT:-can_follower1}"
 TELEOP_PORT="${TELEOP_PORT:-can_leader1}"
 ROBOT_ID="${ROBOT_ID:-piper_follower}"
 TELEOP_ID="${TELEOP_ID:-piper_leader}"
+DATASET_REPO_ID="${DATASET_REPO_ID:-jis/piper_right_cam_test}"
+DATASET_ROOT="${DATASET_ROOT:-/lerobot/data/piper_right_cam_test}"
+DATASET_TASK="${DATASET_TASK:-teleoperate piper arm}"
+DATASET_NUM_EPISODES="${DATASET_NUM_EPISODES:-10}"
+DATASET_EPISODE_TIME_S="${DATASET_EPISODE_TIME_S:-30}"
+DATASET_RESET_TIME_S="${DATASET_RESET_TIME_S:-5}"
 
 # Default: identify only the right camera.
 # top/left are intentionally kept disabled for now because only the right
@@ -354,7 +360,7 @@ choose_removed_path() {
   echo "${candidates[0]}"
 }
 
-print_teleop_command() {
+camera_config_for_right() {
   local top_camera="${CAMERA_PATHS[top]:-}"
   local right_camera="${CAMERA_PATHS[right]:-}"
   local left_camera="${CAMERA_PATHS[left]:-}"
@@ -368,11 +374,10 @@ print_teleop_command() {
     exit 1
   fi
 
-  local camera_config
   if [ -n "${right_fourcc}" ]; then
-    camera_config="{right: {type: opencv, index_or_path: '${right_camera}', fps: ${right_fps}, width: ${right_width}, height: ${right_height}, fourcc: ${right_fourcc}}}"
+    echo "{right: {type: opencv, index_or_path: '${right_camera}', fps: ${right_fps}, width: ${right_width}, height: ${right_height}, fourcc: ${right_fourcc}}}"
   else
-    camera_config="{right: {type: opencv, index_or_path: '${right_camera}', fps: ${right_fps}, width: ${right_width}, height: ${right_height}}}"
+    echo "{right: {type: opencv, index_or_path: '${right_camera}', fps: ${right_fps}, width: ${right_width}, height: ${right_height}}}"
   fi
 
   # top/left are intentionally not included by default.
@@ -381,6 +386,11 @@ print_teleop_command() {
   # add entries like these to camera_config if needed:
   #   top: {type: opencv, index_or_path: '${top_camera}', fps: ${FPS}, width: ${WIDTH}, height: ${HEIGHT}}
   #   left: {type: opencv, index_or_path: '${left_camera}', fps: ${FPS}, width: ${WIDTH}, height: ${HEIGHT}}
+}
+
+print_teleop_command() {
+  local camera_config
+  camera_config="$(camera_config_for_right)"
 
   cat <<EOF
 lerobot-teleoperate \\
@@ -391,6 +401,31 @@ lerobot-teleoperate \\
   --teleop.type=piper_leader \\
   --teleop.port="${TELEOP_PORT}" \\
   --teleop.id="${TELEOP_ID}" \\
+  --display_data=true
+EOF
+}
+
+print_record_command() {
+  local camera_config
+  camera_config="$(camera_config_for_right)"
+
+  cat <<EOF
+lerobot-record \\
+  --robot.type=piper_follower \\
+  --robot.port="${ROBOT_PORT}" \\
+  --robot.id="${ROBOT_ID}" \\
+  --robot.cameras="${camera_config}" \\
+  --teleop.type=piper_leader \\
+  --teleop.port="${TELEOP_PORT}" \\
+  --teleop.id="${TELEOP_ID}" \\
+  --dataset.repo_id="${DATASET_REPO_ID}" \\
+  --dataset.root="${DATASET_ROOT}" \\
+  --dataset.single_task="${DATASET_TASK}" \\
+  --dataset.fps=${FPS} \\
+  --dataset.num_episodes=${DATASET_NUM_EPISODES} \\
+  --dataset.episode_time_s=${DATASET_EPISODE_TIME_S} \\
+  --dataset.reset_time_s=${DATASET_RESET_TIME_S} \\
+  --dataset.push_to_hub=false \\
   --display_data=true
 EOF
 }
@@ -409,6 +444,8 @@ echo "Teleop defaults:"
 echo "  robot port : ${ROBOT_PORT}"
 echo "  teleop port: ${TELEOP_PORT}"
 echo "  camera     : ${WIDTH}x${HEIGHT}@${FPS}"
+echo "  record repo: ${DATASET_REPO_ID}"
+echo "  record root: ${DATASET_ROOT}"
 if [ -n "${FOURCC}" ]; then
   echo "  fourcc     : ${FOURCC}"
 fi
@@ -482,6 +519,10 @@ for role in "${ROLES[@]}"; do
 done
 
 echo
-echo "[Done] Copy and run this inside the LeRobot Docker container:"
+echo "[Done] Copy and run these inside the LeRobot Docker container:"
 echo
+echo "# Teleoperate"
 print_teleop_command
+echo
+echo "# Record dataset"
+print_record_command
