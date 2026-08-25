@@ -3,11 +3,11 @@ import time
 from typing import Any
 
 from piper_sdk import C_PiperInterface_V2
-from wego_piper.port_handler import PortHandler
 
 from lerobot.motors import Motor, MotorCalibration, MotorNormMode
 from lerobot.motors.motors_bus import MotorsBusBase
 
+from .port_handler import PortHandler
 from .tables import (
     INITIALIZE_POSITION,
     MODEL_RESOLUTION_TABLE,

@@ -1,0 +1,6 @@
+# Shell scripts must stay LF — CRLF breaks the shebang on Linux.
+*.sh text eol=lf
+*.py text eol=lf
+*.md text
+*.toml text
+*.yml text eol=lf
