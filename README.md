@@ -1,6 +1,20 @@
 # lerobot_robot_piper
 
+[![Release](https://img.shields.io/github/v/release/WeGo-Robotics/lerobot_robot_piper)](https://github.com/WeGo-Robotics/lerobot_robot_piper/releases)
+[![License](https://img.shields.io/badge/license-Apache--2.0-blue)](https://www.apache.org/licenses/LICENSE-2.0)
+![Python](https://img.shields.io/badge/python-%E2%89%A53.10-blue)
+
 LeRobot plugin for the **Agilex Piper** 7-DOF robotic arm. Provides follower (robot) and leader (teleoperator) interfaces that integrate directly with the [LeRobot](https://github.com/huggingface/lerobot) framework for teleoperation, dataset recording, and autonomous policy deployment.
+
+```bash
+# The whole setup, start to finish:
+git clone https://github.com/WeGo-Robotics/lerobot_robot_piper.git
+cd lerobot_robot_piper && pip install -e .
+piper-doctor                                  # verify install & hardware
+piper-setup                                   # name your arms (once)
+sudo bash scripts/install_can_persist.sh      # survive reboots (once)
+piper-teleop                                  # go
+```
 
 ---
 
@@ -18,12 +32,20 @@ LeRobot plugin for the **Agilex Piper** 7-DOF robotic arm. Provides follower (ro
 
 ## Installation
 
-> Do **not** `pip install lerobot_robot_piper` — the package of that name on PyPI is an unrelated third-party project. Install from source:
+> Do **not** `pip install lerobot_robot_piper` — the package of that name on PyPI is an unrelated third-party project.
+
+**From source (recommended)** — includes the `scripts/` for CAN persistence:
 
 ```bash
 git clone https://github.com/WeGo-Robotics/lerobot_robot_piper.git
 cd lerobot_robot_piper
 pip install -e .
+```
+
+**From a released wheel** — package only (GUIs, `piper-doctor`, Python API; the CAN persistence scripts still require the repo). Grab the `.whl` URL from the [latest release](https://github.com/WeGo-Robotics/lerobot_robot_piper/releases/latest):
+
+```bash
+pip install https://github.com/WeGo-Robotics/lerobot_robot_piper/releases/download/v0.2.0/lerobot_robot_piper-0.2.0-py3-none-any.whl
 ```
 
 All dependencies, including [`piper_sdk`](https://pypi.org/project/piper_sdk/), resolve automatically from PyPI.
