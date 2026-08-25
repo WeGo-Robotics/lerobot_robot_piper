@@ -1,6 +1,6 @@
 [project]
-name = "lerobot_robot_piper"
-version = "0.2.0"
+name = "lerobot_robot_wego_piper"
+version = "0.3.0"
 description = "LeRobot plugin for Agilex Piper robotic arm (follower & leader)"
 readme = "README.md"
 license = "Apache-2.0"
@@ -20,7 +20,7 @@ piper-calibrate = "lerobot_robot_piper.calibration_ui:main"
 piper-doctor = "lerobot_robot_piper.doctor:main"
 
 [tool.setuptools.packages.find]
-include = ["lerobot_robot_piper*"]
+include = ["lerobot_robot_piper*", "lerobot_robot_wego_piper*"]
 
 [build-system]
 requires = ["setuptools>=68.0"]

@@ -186,7 +186,8 @@ def check_packages(r: Report) -> bool:
     if discovery:
         r.check(FAIL, "plugin registers on manual import but lerobot auto-discovery missed it",
                 "the CLI (--robot.type=piper_follower) will NOT find it",
-                "reinstall: pip install -e .  - the installed distribution must be named lerobot_robot_piper")
+                "reinstall: pip install lerobot_robot_wego_piper (or pip install -e . from the repo) "
+                "- the installed distribution name must start with lerobot_robot_")
     else:
         for _, n in targets:
             r.check(OK, f"'{n}' registered on import")

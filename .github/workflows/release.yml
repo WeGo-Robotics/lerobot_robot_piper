@@ -1,5 +1,9 @@
-# Tag push (v*) -> build sdist + wheel -> attach to a GitHub Release.
-# Users can then:  pip install https://github.com/WeGo-Robotics/lerobot_robot_piper/releases/download/vX.Y.Z/lerobot_robot_piper-X.Y.Z-py3-none-any.whl
+# Tag push (v*) -> build sdist + wheel -> GitHub Release + PyPI.
+#
+# PyPI upload uses Trusted Publishing (OIDC, no token secret). One-time setup
+# on pypi.org -> "Publishing" -> add publisher:
+#   project: lerobot_robot_wego_piper, owner: WeGo-Robotics,
+#   repo: lerobot_robot_piper, workflow: release.yml, environment: (blank)
 name: Release
 
 on:
@@ -8,6 +12,7 @@ on:
 
 permissions:
   contents: write
+  id-token: write
 
 jobs:
   build-and-release:
@@ -36,6 +41,7 @@ jobs:
               "lerobot_robot_piper/doctor.py",
               "lerobot_robot_piper/motors/__init__.py",
               "lerobot_robot_piper/motors/port_handler.py",
+              "lerobot_robot_wego_piper/__init__.py",
           ]:
               assert mod in names, f"missing from wheel: {mod}"
           print("wheel OK:", whl)
@@ -46,3 +52,6 @@ jobs:
         with:
           files: dist/*
           generate_release_notes: true
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1

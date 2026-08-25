@@ -32,9 +32,15 @@ piper-teleop                                  # go
 
 ## Installation
 
-> Do **not** `pip install lerobot_robot_piper` — the package of that name on PyPI is an unrelated third-party project.
+**From PyPI**:
 
-**From source (recommended)** — includes the `scripts/` for CAN persistence:
+```bash
+pip install lerobot_robot_wego_piper
+```
+
+> The PyPI name is `lerobot_robot_wego_piper` — the package named `lerobot_robot_piper` on PyPI is an **unrelated third-party project**. The import name stays `lerobot_robot_piper` either way.
+
+**From source** — needed for the `scripts/` (CAN persistence) and development:
 
 ```bash
 git clone https://github.com/WeGo-Robotics/lerobot_robot_piper.git
@@ -42,13 +48,7 @@ cd lerobot_robot_piper
 pip install -e .
 ```
 
-**From a released wheel** — package only (GUIs, `piper-doctor`, Python API; the CAN persistence scripts still require the repo). Grab the `.whl` URL from the [latest release](https://github.com/WeGo-Robotics/lerobot_robot_piper/releases/latest):
-
-```bash
-pip install https://github.com/WeGo-Robotics/lerobot_robot_piper/releases/download/v0.2.0/lerobot_robot_piper-0.2.0-py3-none-any.whl
-```
-
-All dependencies, including [`piper_sdk`](https://pypi.org/project/piper_sdk/), resolve automatically from PyPI.
+Wheels are also attached to each [GitHub Release](https://github.com/WeGo-Robotics/lerobot_robot_piper/releases). All dependencies, including [`piper_sdk`](https://pypi.org/project/piper_sdk/), resolve automatically from PyPI.
 
 Verify the installation (and later, the hardware) with:
 
@@ -310,6 +310,7 @@ lerobot_robot_piper/
     ├── piper_motors_bus.py  # CAN bus abstraction
     ├── port_handler.py      # CAN port lifecycle (absorbed from wego_piper)
     └── tables.py            # Motor model tables
+lerobot_robot_wego_piper/    # PyPI-name discovery shim (re-exports the package above)
 scripts/
 ├── can_activate.sh          # single-CAN activation
 ├── can_restore.sh           # bring up arms from ~/piper_config.json
