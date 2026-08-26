@@ -1,6 +1,6 @@
 [project]
 name = "lerobot_robot_wego_piper"
-version = "0.3.0"
+version = "0.3.1"
 description = "LeRobot plugin for Agilex Piper robotic arm (follower & leader)"
 readme = "README.md"
 license = "Apache-2.0"
