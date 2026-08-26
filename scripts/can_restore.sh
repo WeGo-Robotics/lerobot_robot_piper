@@ -23,7 +23,14 @@
 
 set -u
 
-CONFIG="${PIPER_CONFIG:-$HOME/piper_config.json}"
+# Under `sudo bash can_restore.sh` $HOME is root's — resolve the config in the
+# invoking user's home instead (PIPER_CONFIG always wins).
+if [ -n "${PIPER_CONFIG:-}" ]; then
+    CONFIG="$PIPER_CONFIG"
+else
+    CFG_HOME=$(getent passwd "${SUDO_USER:-$(id -un)}" | cut -d: -f6)
+    CONFIG="${CFG_HOME:-$HOME}/piper_config.json"
+fi
 BITRATE="${PIPER_BITRATE:-1000000}"
 
 SUDO=""
