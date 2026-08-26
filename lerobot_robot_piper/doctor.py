@@ -391,6 +391,13 @@ def main() -> int:
 
     r.section(4, total, "Arm response")
     if plugin_ok:
+        if not up:
+            # Config names may not be applied yet, but any UP interface can
+            # still be probed - arm liveness is independent of naming.
+            up = [i for i, s in _can_ifaces() if s == "UP"]
+            if up:
+                r.check(WARN, f"probing unnamed interfaces: {', '.join(up)}",
+                        "section 3 failed, so these may not match the configured roles")
         check_arms(r, up)
     else:
         r.check(SKIP, "packages broken - fix section 1 first")
