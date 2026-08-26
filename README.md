@@ -6,6 +6,8 @@
 
 LeRobot plugin for the **Agilex Piper** 7-DOF robotic arm. Provides follower (robot) and leader (teleoperator) interfaces that integrate directly with the [LeRobot](https://github.com/huggingface/lerobot) framework for teleoperation, dataset recording, and autonomous policy deployment.
 
+> 한국어 안내는 [아래](#한국어-korean)에 있습니다.
+
 ```bash
 # The whole setup, start to finish:
 git clone https://github.com/WeGo-Robotics/lerobot_robot_piper.git
@@ -193,10 +195,23 @@ piper-teleop
 piper-calibrate
 ```
 
-1. Connect to a Piper arm via CAN
+1. Connect to a Piper arm via CAN (teaching/free mode recommended)
 2. Manually move each joint to its zero (home) position
-3. Click **Set Zero** — writes the zero-point to the motor's flash (persists across power cycles)
-4. Real-time joint monitor shows raw positions for verification
+3. Click **Set Zero** — sends `JointConfig(set_zero=0xAE)` (gripper: `GripperCtrl(..., 0xAE)`), which writes the zero-point into the **motor's flash memory**; it persists across power cycles
+4. The response flag (`is_set_zero_successfully`) confirms each write; a guard asks before zeroing a joint that sits more than 5° away from raw zero
+5. **Clear Errors** sends `JointConfig(clear_err=0xAE)` to all joints
+
+#### Why calibration lives in the motor, not in software
+
+The `MotorCalibration` table in [piper_follower.py](lerobot_robot_piper/piper_follower.py) is intentionally **identical for every arm** — it is not a per-arm correction. Its `range_min`/`range_max` are the *model specification* of each joint's travel (in 0.001° units, e.g. joint 1 = ±150000 = ±150°), used only to map absolute angles to the normalized `[-100, 100]` action/observation space. `homing_offset` is 0 and LeRobot's file-based calibration (`_load_calibration`/`_save_calibration`) is a deliberate no-op.
+
+Per-arm error is absorbed **one layer below**: the Piper SDK reports absolute angles already corrected by the zero-point stored in each motor's flash. So:
+
+- **Arm zeroed correctly** → raw angles are true angles → identical normalization across arms → per-arm error does *not* leak into recorded datasets.
+- **Arm zeroed poorly** → the offset rides along in every recorded value. The fix is `piper-calibrate`, once per arm.
+- **Leader–follower pairs**: zero both arms in the *same physical reference pose* so their coordinate frames agree.
+
+Limitations (honest ones): zeroing accuracy depends on how precisely you place the physical reference pose (use a jig if you need repeatability), and scale-type errors (link-length deviation, gear backlash) are not corrected by any zero-point — neither here nor by LeRobot's file calibration.
 
 ### `camera_check.py` — Camera Grid Viewer
 
@@ -322,5 +337,295 @@ camera_check.py              # camera grid viewer
 ---
 
 ## License
+
+Apache-2.0
+
+---
+
+# 한국어 (Korean)
+
+**Agilex Piper** 7자유도 로봇팔용 LeRobot 플러그인. 팔로워(로봇)와 리더(텔레오퍼레이터) 인터페이스를 제공하며, [LeRobot](https://github.com/huggingface/lerobot) 프레임워크에 바로 통합되어 텔레오퍼레이션·데이터셋 수집·자율 정책 배포에 사용됩니다.
+
+```bash
+# 처음부터 끝까지 전체 셋업:
+git clone https://github.com/WeGo-Robotics/lerobot_robot_piper.git
+cd lerobot_robot_piper && pip install -e .
+piper-doctor                                  # 설치·하드웨어 점검
+piper-setup                                   # 팔 이름 지정 (1회)
+sudo bash scripts/install_can_persist.sh      # 재부팅 영속화 (1회)
+piper-teleop                                  # 시작
+```
+
+## 주요 기능
+
+- **리더-팔로워 텔레오퍼레이션**: 리더 팔의 움직임을 팔로워 팔에 실시간 미러링
+- **데이터셋 수집**: 모방학습용 에피소드(관절 위치 + 카메라 프레임) 기록
+- **CAN 버스 통신**: `piper_sdk` 기반 직접 하드웨어 제어
+- **안전 제한**: `max_relative_target`으로 스텝당 관절 이동량 상한 설정
+- **카메라 연동**: 팔로워 관측에 USB 카메라 다중 연결
+- **GUI 도구**: 셋업(`piper-setup`), 직접 제어(`piper-ui`), 텔레옵 모니터(`piper-teleop`), 영점 캘리브레이션(`piper-calibrate`)
+- **부팅 영속 CAN 셋업**: 1회 설치로 재부팅·재연결에도 정식 CAN 이름 유지
+
+## 설치
+
+**PyPI에서**:
+
+```bash
+pip install lerobot_robot_wego_piper
+```
+
+> PyPI 패키지명은 `lerobot_robot_wego_piper`입니다 — PyPI의 `lerobot_robot_piper`는 **무관한 타인의 프로젝트**입니다. 임포트 이름은 어느 쪽으로 설치해도 `lerobot_robot_piper`로 동일합니다.
+
+**소스에서** — `scripts/`(CAN 영속화)와 개발에 필요:
+
+```bash
+git clone https://github.com/WeGo-Robotics/lerobot_robot_piper.git
+cd lerobot_robot_piper
+pip install -e .
+```
+
+각 [GitHub Release](https://github.com/WeGo-Robotics/lerobot_robot_piper/releases)에도 wheel이 첨부됩니다. [`piper_sdk`](https://pypi.org/project/piper_sdk/)를 포함한 모든 의존성은 PyPI에서 자동 해결됩니다.
+
+설치(그리고 이후 하드웨어) 확인:
+
+```bash
+piper-doctor
+```
+
+**요구사항**: Python >= 3.10, LeRobot >= 0.3.0, SocketCAN 지원 Linux(`iproute2`, `ethtool`, `can-utils`), Piper 팔에 연결된 CAN-USB 인터페이스(gs_usb).
+
+```bash
+sudo apt update && sudo apt install iproute2 ethtool can-utils
+```
+
+## 하드웨어 셋업
+
+### 최초 셋업 (권장 경로)
+
+```bash
+# 1. 팔에 정식 이름 부여 (GUI 마법사, 아래 참조)
+piper-setup
+
+# 2. 재부팅·재연결·포트 교체에도 유지되도록 영속화
+#    (팔을 꽂은 상태로 실행 — 어댑터 시리얼을 라이브로 읽음)
+sudo bash scripts/install_can_persist.sh
+```
+
+이후 `can_leader1`, `can_follower1` 등이 매 부팅·재연결마다 자동으로 올라옵니다.
+
+**시리얼 고정이 중요한 이유**: `can0`/`can1`은 커널 열거 순서일 뿐이라, 어댑터 두 개를 USB 포트만 바꿔 꽂아도 두 팔의 이름이 조용히 뒤바뀝니다 — 리더 팔에 팔로워 명령이 갈 수 있습니다. 설치 스크립트는 각 어댑터의 USB **시리얼**에 고정된 udev 규칙을 생성하므로, 어느 포트에 꽂아도 이름이 팔을 따라갑니다. 팔을 다른 어댑터에 재배선했을 때만 `piper-setup` + 설치 스크립트를 다시 실행하면 됩니다.
+
+어느 어댑터가 어느 것인지 확인(재배선 전 등):
+
+```bash
+python3 scripts/list_can_adapters.py          # 시리얼 <-> 인터페이스 표
+python3 scripts/list_can_adapters.py --watch  # 팔을 손으로 움직여 식별
+```
+
+### `piper-doctor` — 뭔가 안 될 때
+
+```bash
+piper-doctor
+```
+
+의존 순서대로 전체 체인을 검사하고 실패마다 해결 명령을 출력합니다:
+
+1. 파이썬 패키지 & LeRobot 플러그인 등록 (`piper_follower`/`piper_leader` 타입)
+2. USB 버스의 CAN 어댑터 하드웨어
+3. CAN 인터페이스 상태 vs `~/piper_config.json` (이름·UP·bitrate)
+4. 팔 응답 — 수동 RX 카운터, 이어서 능동 펌웨어 질의
+5. 부팅 영속화 (udev 규칙 + `piper-can-up.service`)
+
+읽기 전용 — 인터페이스 상태 변경이나 팔 명령 전송 없음. 종료 코드 0 = 정상, 1 = 문제 발견.
+
+### 수동 CAN 활성화 (단일 팔, 마법사 없이)
+
+```bash
+# 유일하게 꽂힌 CAN 모듈을 can0, 1 Mbps로 활성화
+bash scripts/can_activate.sh can0 1000000
+
+# 모듈이 여러 개면 USB 주소로 구분
+sudo ethtool -i can0 | grep bus-info
+bash scripts/can_activate.sh can0 1000000 1-2:1.0
+```
+
+완전 수동:
+
+```bash
+sudo ip link set can0 type can bitrate 1000000
+sudo ip link set can0 up
+```
+
+`piper-ui`, `piper-teleop` GUI에서도 CAN 인터페이스 감지·초기화가 가능합니다.
+
+### 스크립트
+
+| 스크립트 | 용도 |
+|--------|---------|
+| `scripts/can_activate.sh` | 단일 CAN 인터페이스 활성화 (이름, bitrate, USB 주소 선택) |
+| `scripts/can_restore.sh` | `~/piper_config.json` 기준 전체 팔 올리기 (필요 시 rename, bitrate, up) |
+| `scripts/install_can_persist.sh` | 시리얼 고정 udev `NAME=` 규칙 생성 + 부팅/핫플러그 서비스 설치; `uninstall`로 제거 |
+| `scripts/list_can_adapters.py` | 어댑터 시리얼 ↔ 인터페이스 표; `--watch`로 팔을 움직여 식별 |
+
+### 배선
+
+| 팔 | 인터페이스 |
+|-----|-----------|
+| 팔로워 (로봇) | 예: `can_follower1` (또는 `can0`) |
+| 리더 (사람 입력) | 예: `can_leader1` (또는 `can1`) |
+
+## GUI 도구
+
+### `piper-setup` — 다중 팔 셋업 마법사
+
+여러 팔을 처음 설정할 때 가장 먼저 실행합니다.
+
+```bash
+piper-setup
+```
+
+최대 4개 팔을 설정하는 4단계 마법사:
+
+1. **Scan** — 모든 CAN 포트 감지·초기화·연결, 각 팔의 펌웨어 버전 읽기
+2. **Config** — 팔 구성 선택 (리더1/팔로워1, 팔로워2, 리더2, 리더2/팔로워2)
+3. **Identify** — 슬롯마다 `Find` 클릭 후 해당 팔을 45° 이상 크게 움직여 할당; `Set Role`로 리더/팔로워 모드 적용, `Torque Off`로 팔 해제
+4. **Finalize** — CAN 포트를 정식 이름(`can_leader1`, `can_follower1` 등)으로 변경하고 `~/piper_config.json` 저장
+
+### `piper-ui` — 직접 제어
+
+```bash
+piper-ui
+```
+
+- **CAN Setup**: 인터페이스 감지, 인터페이스별 펌웨어·USB 포트 확인, 역할 선택, bitrate 초기화
+- **Connect**: 라디오 버튼으로 포트 선택 후 연결 — 슬라이더가 현재 관절 위치에 자동 동기화
+- **Torque**: 토크 on/off 토글; off 동안 슬라이더·파킹 비활성화
+- **Set Leader / Set Follower**: `MasterSlaveConfig`로 티칭 입력 모드 ↔ 모션 출력 모드 전환
+- **Parking**: 홈 포지션으로 이동 (관절값: 0, −100, 100, 0, 35, 0, 0)
+- **Joints**: 슬라이더로 실시간 관절 제어 (토크 on일 때만), 슬라이더 옆 실시간 위치 표시
+
+### `piper-teleop` — 텔레오퍼레이션 모니터
+
+```bash
+piper-teleop
+```
+
+- CAN 인터페이스 감지·초기화
+- 사전 구성된 텔레옵/기록 명령 실행
+- 두 팔(리더·팔로워)의 실시간 관절 위치 바
+- 팔로워 상태 표시 (enable 상태, 모션 상태, 에러 코드)
+
+### `piper-calibrate` — 관절 영점 캘리브레이션
+
+```bash
+piper-calibrate
+```
+
+1. CAN으로 팔에 연결 (티칭/프리 모드 권장)
+2. 각 관절을 손으로 영점(홈) 자세에 위치
+3. **Set Zero** 클릭 — `JointConfig(set_zero=0xAE)` 전송(그리퍼는 `GripperCtrl(..., 0xAE)`), 영점이 **모터 플래시 메모리에 기록**되어 전원을 꺼도 유지
+4. 응답 플래그(`is_set_zero_successfully`)로 기록 성공 확인; raw 기준 5° 이상 벗어난 관절은 실수 방지 확인창 표시
+5. **Clear Errors**는 전 관절에 `JointConfig(clear_err=0xAE)` 전송
+
+#### 캘리브레이션이 소프트웨어가 아니라 모터에 있는 이유
+
+[piper_follower.py](lerobot_robot_piper/piper_follower.py)의 `MotorCalibration` 테이블은 의도적으로 **모든 팔에 동일**합니다 — 팔 개별 보정값이 아닙니다. `range_min`/`range_max`는 각 관절 가동범위의 *기종 스펙*(0.001° 단위, 예: joint 1 = ±150000 = ±150°)이며, 절대각을 정규화 좌표 `[-100, 100]`으로 매핑하는 스케일로만 쓰입니다. `homing_offset`은 0이고, LeRobot의 파일 기반 캘리브레이션(`_load_calibration`/`_save_calibration`)은 의도된 no-op입니다.
+
+팔 개별 오차는 **한 층 아래에서** 흡수됩니다: Piper SDK가 보고하는 절대각은 이미 각 모터 플래시에 저장된 영점으로 보정된 값입니다. 따라서:
+
+- **영점이 정확한 팔** → raw 각도 = 실제 각도 → 팔 간 동일한 정규화 → 개별 오차가 수집 데이터에 *들어가지 않음*
+- **영점이 어긋난 팔** → 그 오프셋이 모든 기록값에 그대로 실림. 해결책은 팔당 1회 `piper-calibrate`
+- **리더-팔로워 짝**: 두 팔을 *같은 물리 기준자세*에서 각각 영점 설정해야 좌표계가 일치
+
+한계(정직하게): 영점 정확도는 물리 기준자세를 얼마나 정확히 만드느냐에 의존하며(재현성이 필요하면 지그 사용), 링크 치수 편차·기어 백래시 같은 스케일성 오차는 어떤 영점으로도 — LeRobot 파일 캘리브레이션으로도 — 보정되지 않습니다.
+
+### `camera_check.py` — 카메라 그리드 뷰어
+
+```bash
+python camera_check.py
+```
+
+`/dev/video0` … `/dev/video17`을 탐색해 동작하는 카메라를 모두 열고 한 그리드에 표시 — 기록 전 카메라 인덱스 확인에 유용합니다.
+
+## 빠른 시작
+
+### 1. Python API
+
+```python
+from lerobot_robot_piper import PiperFollowerConfig, PiperLeaderConfig, PiperFollower, PiperLeader
+
+follower_cfg = PiperFollowerConfig(port="can_follower1")
+leader_cfg   = PiperLeaderConfig(port="can_leader1")
+
+follower = PiperFollower(follower_cfg)
+leader   = PiperLeader(leader_cfg)
+
+follower.connect()
+leader.connect()
+
+try:
+    while True:
+        action = leader.get_action()        # 리더 관절 위치 읽기
+        follower.send_action(action)        # 팔로워에 미러링
+        obs = follower.get_observation()    # 팔로워 상태 + 카메라 읽기
+finally:
+    follower.disconnect()
+    leader.disconnect()
+```
+
+### 2. LeRobot CLI
+
+```bash
+# 텔레오퍼레이션
+python -m lerobot.teleoperate \
+    --robot.type=piper_follower \
+    --robot.port=can_follower1 \
+    --teleop.type=piper_leader \
+    --teleop.port=can_leader1
+
+# 데이터셋 기록
+python -m lerobot.record \
+    --robot.type=piper_follower \
+    --robot.port=can_follower1 \
+    --teleop.type=piper_leader \
+    --teleop.port=can_leader1 \
+    --dataset-id=my_piper_dataset
+```
+
+## 설정
+
+### PiperFollowerConfig
+
+| 파라미터 | 타입 | 기본값 | 설명 |
+|-----------|------|---------|-------------|
+| `port` | `str` | `"can0"` | 팔로워 팔의 CAN 포트 |
+| `disable_torque_on_disconnect` | `bool` | `True` | 연결 해제 시 모터 비활성화 |
+| `cameras` | `dict[str, CameraConfig]` | `{}` | 관측용 카메라 (이름 지정) |
+| `max_relative_target` | `float \| dict \| None` | `None` | 스텝당 최대 관절 이동량 (안전 제한) |
+
+### PiperLeaderConfig
+
+| 파라미터 | 타입 | 기본값 | 설명 |
+|-----------|------|---------|-------------|
+| `port` | `str` | `"can1"` | 리더 팔의 CAN 포트 |
+| `gripper_open_pos` | `float` | `50.0` | 그리퍼 완전 개방에 해당하는 위치값 |
+
+## 모터 구성
+
+Piper 팔은 관절 7개입니다. 정규화는 raw 인코더 값을 아래 범위로 매핑합니다.
+
+| 관절 | 모델 | 정규화 범위 | 물리 범위 |
+|-------|-------|-----------------|----------------|
+| Joint 1 | AGILEX-M | −100 ~ +100 | ±150° |
+| Joint 2 | AGILEX-M | −100 ~ +100 | 0–180° |
+| Joint 3 | AGILEX-M | −100 ~ +100 | −170–0° |
+| Joint 4 | AGILEX-S | −100 ~ +100 | ±100° |
+| Joint 5 | AGILEX-S | −100 ~ +100 | ±65° |
+| Joint 6 | AGILEX-S | −100 ~ +100 | ±100–130° |
+| Gripper | AGILEX-S | 0 ~ 100 | 0–68° |
+
+파킹(홈) 위치의 정규화 값: `0, −100, 100, 0, 35, 0, 0`
+
+## 라이선스
 
 Apache-2.0
