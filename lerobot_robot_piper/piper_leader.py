@@ -40,7 +40,7 @@ class PiperLeader(Teleoperator):
                 "joint3": MotorCalibration(3, 0, 0, -170000, 0),
                 "joint4": MotorCalibration(4, 0, 0, -100000, 100000),
                 "joint5": MotorCalibration(5, 0, 0, -65000, 65000),
-                "joint6": MotorCalibration(6, 0, 0, -100000, 130000),
+                "joint6": MotorCalibration(6, 0, 0, -120000, 120000),
                 "gripper": MotorCalibration(7, 0, 0, 0, 68000),
             },
         )
