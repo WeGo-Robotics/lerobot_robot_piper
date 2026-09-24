@@ -11,3 +11,12 @@ class PiperLeaderConfig(TeleoperatorConfig):
 
     # Sets the arm in torque mode with the gripper motor set to this value.
     gripper_open_pos: float = 50.0
+
+
+@dataclass
+class PiperLeaderArmConfig:
+    # Port to connect to the arm
+    port: str
+
+    # Sets the arm in torque mode with the gripper motor set to this value.
+    gripper_open_pos: float = 50.0

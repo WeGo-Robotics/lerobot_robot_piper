@@ -268,6 +268,27 @@ python -m lerobot.record \
     --dataset-id=my_piper_dataset
 ```
 
+### 3. Bimanual LeRobot CLI
+
+Use `piper-setup` first to assign and rename four CAN ports, then run the bimanual
+wrapper types:
+
+```bash
+lerobot-teleoperate \
+    --robot.type=bi_piper_follower \
+    --robot.left_arm_config.port=can_follower1 \
+    --robot.right_arm_config.port=can_follower2 \
+    --robot.id=bimanual_piper_follower \
+    --teleop.type=bi_piper_leader \
+    --teleop.left_arm_config.port=can_leader1 \
+    --teleop.right_arm_config.port=can_leader2 \
+    --teleop.id=bimanual_piper_leader \
+    --display_data=true
+```
+
+Bimanual observations and actions are prefixed with `left_` and `right_`, for
+example `left_joint1.pos` and `right_joint1.pos`.
+
 ---
 
 ## Configuration
@@ -312,6 +333,10 @@ The parking (home) position in normalized values: `0, −100, 100, 0, 35, 0, 0`.
 
 ```
 lerobot_robot_piper/
+├── bi_piper_follower.py     # BiPiperFollower (two follower arms)
+├── bi_piper_leader.py       # BiPiperLeader (two leader arms)
+├── config_bi_piper.py       # BiPiperFollowerConfig
+├── config_bi_piper_leader.py # BiPiperLeaderConfig
 ├── config_piper.py          # PiperFollowerConfig
 ├── config_piper_leader.py   # PiperLeaderConfig
 ├── piper_follower.py        # PiperFollower (Robot)
