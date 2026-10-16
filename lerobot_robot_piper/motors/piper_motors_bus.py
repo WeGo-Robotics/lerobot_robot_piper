@@ -26,14 +26,31 @@ class PiperMotorsBus(MotorsBusBase):
         port: str,
         motors: dict[str, Motor],
         calibration: dict[str, MotorCalibration] | None = None,
+        can_interface: str = "socketcan",
+        can_bitrate: int = 1_000_000,
     ):
         super().__init__(port, motors, calibration)
 
         self.port_handler = PortHandler()
         self.id = id
         self._is_connected = False
-        self.piper = C_PiperInterface_V2(port)
-        logger.info(f"{id} : {port} is selected.")
+        self.can_interface = can_interface
+        if can_interface == "socketcan":
+            # Unchanged Linux path: the SDK opens the SocketCAN interface itself.
+            self.piper = C_PiperInterface_V2(port)
+        else:
+            # Without SocketCAN, open the bus through python-can's other interfaces.
+            # gs_usb picks the adapter by index, so it needs an int channel.
+            channel = int(port) if can_interface == "gs_usb" and port.isdigit() else port
+            # The SDK keeps one instance per name, so qualify it with the interface:
+            # "0" on gs_usb and "0" on another backend are different adapters.
+            self.piper = C_PiperInterface_V2(
+                f"{can_interface}:{port}", judge_flag=False, can_auto_init=False
+            )
+            self.piper.CreateCanBus(
+                channel, bustype=can_interface, expected_bitrate=can_bitrate, judge_flag=False
+            )
+        logger.info(f"{id} : {port} ({can_interface}) is selected.")
 
     # ---- MotorsBusBase abstract implementations ----
 
@@ -45,7 +62,40 @@ class PiperMotorsBus(MotorsBusBase):
         self.port_handler.setupPort(self.piper)
         if not self.port_handler.openPort():
             raise ConnectionError(f"Failed to open port for {self.id}")
+        if self.can_interface != "socketcan":
+            self._wait_for_arm_frames()
         self._is_connected = True
+
+    def _wait_for_arm_frames(self, timeout_s: float = 2.0) -> None:
+        """Fail loudly when nothing from the arm arrives.
+
+        The SDK swallows `can.CanError` while opening a non-SocketCAN bus, so a missing
+        adapter or a wrong `port` would otherwise look connected while reading nothing.
+
+        Only frames the arm itself sends count: status (0x2A1) and joint feedback
+        (0x2A5-0x2A7) from a follower, joint control (0x155-0x157) from a leader in teach
+        mode. `GetCanFps()` is not enough, because gs_usb hands our own transmit echoes
+        back as frames and `ConnectPort()` has just sent queries. Timestamps are not
+        enough either: they survive a reconnect (the SDK keeps one instance per port),
+        and gs_usb adapters without hardware timestamps report 0. The SDK's per-message
+        rates (`Hz`) are recounted every 0.1 s, so they show frames that just arrived.
+        """
+        time.sleep(0.2)  # let rates left over from an earlier connection run out
+        deadline = time.monotonic() + timeout_s
+        while time.monotonic() < deadline:
+            if (
+                self.piper.GetArmStatus().Hz > 0
+                or self.piper.GetArmJointMsgs().Hz > 0
+                or self.piper.GetArmJointCtrl().Hz > 0
+            ):
+                return
+            time.sleep(0.05)
+        self.port_handler.closePort()
+        raise ConnectionError(
+            f"No frame from the arm on {self.port} ({self.can_interface}) within "
+            f"{timeout_s:.0f}s. Check that the adapter is plugged in, the port is right, "
+            f"and the arm is powered."
+        )
 
     def disconnect(self, disable_torque: bool = True) -> None:
         if disable_torque:
