@@ -64,6 +64,24 @@ piper-doctor
 sudo apt update && sudo apt install iproute2 ethtool can-utils
 ```
 
+**Without SocketCAN (macOS, Windows) — experimental.** The follower and leader can open the
+same gs_usb adapter through libusb instead of SocketCAN. Set `can_interface` and pass the
+adapter index as `port`. The setup scripts and GUI tools below stay Linux-only. Not yet
+tried with a real arm; a missing adapter or an unpowered arm fails `connect()` with
+`No frame from the arm ...` instead of looking connected.
+
+```bash
+brew install libusb                      # macOS; Windows needs a libusb driver for the adapter
+pip install "python-can[gs_usb]" "piper_sdk>=0.6.1"
+
+python -m lerobot.teleoperate \
+    --robot.type=piper_follower --robot.port=0 --robot.can_interface=gs_usb \
+    --teleop.type=piper_leader --teleop.port=1 --teleop.can_interface=gs_usb
+```
+
+`can_interface` takes any python-can interface name, e.g. `slcan` with `port` set to the
+serial device of a serial CAN module.
+
 ---
 
 ## Hardware Setup
@@ -280,6 +298,8 @@ python -m lerobot.record \
 | `disable_torque_on_disconnect` | `bool` | `True` | Disable motors when disconnecting |
 | `cameras` | `dict[str, CameraConfig]` | `{}` | Named cameras for observation |
 | `max_relative_target` | `float \| dict \| None` | `None` | Max per-step joint movement (safety limit) |
+| `can_interface` | `str` | `"socketcan"` | python-can interface. `gs_usb` or `slcan` without SocketCAN |
+| `can_bitrate` | `int` | `1000000` | CAN bitrate for non-SocketCAN interfaces |
 
 ### PiperLeaderConfig
 
@@ -287,6 +307,8 @@ python -m lerobot.record \
 |-----------|------|---------|-------------|
 | `port` | `str` | `"can1"` | CAN port for the leader arm |
 | `gripper_open_pos` | `float` | `50.0` | Position value representing gripper fully open |
+| `can_interface` | `str` | `"socketcan"` | Same as the follower |
+| `can_bitrate` | `int` | `1000000` | Same as the follower |
 
 ---
 
@@ -397,6 +419,24 @@ piper-doctor
 ```bash
 sudo apt update && sudo apt install iproute2 ethtool can-utils
 ```
+
+**SocketCAN 없이 (macOS, Windows) — 실험 단계.** 팔로워와 리더는 같은 gs_usb 어댑터를
+SocketCAN 대신 libusb로 열 수 있습니다. `can_interface`를 정하고 `port`에 어댑터 순번을
+넣습니다. 아래 셋업 스크립트와 GUI 도구는 그대로 Linux 전용입니다. 실제 팔로는 아직
+시험하지 않았습니다. 어댑터가 없거나 팔 전원이 꺼져 있으면 연결된 것처럼 보이지 않고
+`connect()`가 `No frame from the arm ...` 오류를 냅니다.
+
+```bash
+brew install libusb                      # macOS. Windows는 어댑터용 libusb 드라이버가 필요합니다
+pip install "python-can[gs_usb]" "piper_sdk>=0.6.1"
+
+python -m lerobot.teleoperate \
+    --robot.type=piper_follower --robot.port=0 --robot.can_interface=gs_usb \
+    --teleop.type=piper_leader --teleop.port=1 --teleop.can_interface=gs_usb
+```
+
+`can_interface`에는 python-can 인터페이스 이름을 넣습니다. 예를 들어 직렬 CAN 모듈은
+`slcan`으로 두고 `port`에 직렬 장치를 넣습니다.
 
 ## 하드웨어 셋업
 
@@ -602,6 +642,8 @@ python -m lerobot.record \
 | `disable_torque_on_disconnect` | `bool` | `True` | 연결 해제 시 모터 비활성화 |
 | `cameras` | `dict[str, CameraConfig]` | `{}` | 관측용 카메라 (이름 지정) |
 | `max_relative_target` | `float \| dict \| None` | `None` | 스텝당 최대 관절 이동량 (안전 제한) |
+| `can_interface` | `str` | `"socketcan"` | python-can 인터페이스. SocketCAN이 없으면 `gs_usb`나 `slcan` |
+| `can_bitrate` | `int` | `1000000` | SocketCAN이 아닌 인터페이스의 CAN 속도 |
 
 ### PiperLeaderConfig
 
@@ -609,6 +651,8 @@ python -m lerobot.record \
 |-----------|------|---------|-------------|
 | `port` | `str` | `"can1"` | 리더 팔의 CAN 포트 |
 | `gripper_open_pos` | `float` | `50.0` | 그리퍼 완전 개방에 해당하는 위치값 |
+| `can_interface` | `str` | `"socketcan"` | 팔로워와 같음 |
+| `can_bitrate` | `int` | `1000000` | 팔로워와 같음 |
 
 ## 모터 구성
 

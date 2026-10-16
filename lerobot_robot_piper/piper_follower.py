@@ -32,6 +32,8 @@ class PiperFollower(Robot):
         self.bus = PiperMotorsBus(
             id=config.id,
             port=config.port,
+            can_interface=config.can_interface,
+            can_bitrate=config.can_bitrate,
             motors={
                 "joint1": Motor(1, "AGILEX-M", MotorNormMode.RANGE_M100_100),
                 "joint2": Motor(2, "AGILEX-M", MotorNormMode.RANGE_M100_100),
